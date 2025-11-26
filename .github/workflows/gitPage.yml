@@ -1,0 +1,115 @@
+name: Despliegue de una página web estática
+
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------
+  # 1) Verificar archivos HTML/JS
+  # -------------------------------------------------
+  verificar:
+    name: 1) Verificar archivos HTML y JS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Buscar archivos HTML y JS
+        run: |
+          FILES=$(find . -type f \( -name "*.html" -o -name "*.js" \))
+          if [ -z "$FILES" ]; then
+            echo "❌ No se encontraron archivos HTML o JS. Cancelando workflow."
+            exit 1
+          else
+            echo "✔ Archivos HTML o JS encontrados."
+
+  # -------------------------------------------------
+  # 2) Ejecutar tests (opcional)
+  # -------------------------------------------------
+  tests:
+    name: 2) Ejecutar tests
+    runs-on: ubuntu-latest
+    needs: verificar
+    if: needs.verificar.result == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Instalar dependencias
+        run: npm ci || npm install
+
+      - name: Ejecutar tests
+        run: |
+          npm test || (echo "❌ Los tests fallaron." && exit 1)
+          echo "✔ Tests unitarios completados correctamente."
+
+  # -------------------------------------------------
+  # 3) Generar documentación (opcional)
+  # -------------------------------------------------
+  docs:
+    name: 3) Generar documentación
+    runs-on: ubuntu-latest
+    needs: tests
+    if: needs.tests.result == 'success'
+    outputs:
+      has_docs: ${{ steps.check.outputs.has_docs }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Generar documentación
+        run: |
+          mkdir -p docs
+          npx jsdoc -c jsdoc.json || true
+
+      - name: Comprobar documentación generada
+        id: check
+        run: |
+          COUNT=$(find docs -type f -name "*.html" | wc -l | xargs)
+          if [ "$COUNT" -gt 0 ]; then
+            echo "✔ Documentación generada ($COUNT archivos HTML)."
+            echo "has_docs=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠ No se generó documentación HTML."
+            echo "has_docs=false" >> "$GITHUB_OUTPUT"
+
+  # -------------------------------------------------
+  # 4) Despliegue en GitHub Pages
+  # -------------------------------------------------
+  despliegue:
+    name: 4) Despliegue en GitHub Pages
+    runs-on: ubuntu-latest
+    needs: docs
+    if: needs.docs.outputs.has_docs == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: "."
+
+      - name: Despliegue
+        id: deployment
+        uses: actions/deploy-pages@v4
