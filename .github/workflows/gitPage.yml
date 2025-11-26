@@ -1,4 +1,5 @@
-name: DespliegueGitPage
+name: Despliegue de una página web estática (Separado por Jobs)
+
 on:
   push:
     branches: ["main"]
@@ -7,23 +8,40 @@ permissions:
   contents: read
   pages: write
   id-token: write
-concurrency: group:"pages"
-  cancel-in-progress:false
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
 jobs:
-  despliegue:
-    environment:
-      name: github-pages
-      url: ${{steps,deployment.outputs.page_url}}
+  # 1. Job de Preparación y Configuración
+  setup-pages:
+    name: Preparación de GitHub Pages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5.0.0
+
       - name: Setup Pages
         uses: actions/configure-pages@v5.0.0
-      - name: upload artifact
+
+      - name: Crear Artefacto de Despliegue
         uses: actions/upload-pages-artifact@v4.0.0
         with:
           path: "."
+
+  # 2. Job de Despliegue Final
+  despliegue:
+    name: Despliegue Final en Pages
+    needs: setup-pages
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    runs-on: ubuntu-latest
+
+    steps:
       - name: Despliegue
         id: deployment
         uses: actions/deploy-pages@v4.0.5
