@@ -1,4 +1,4 @@
-name: Deploy to AWS S3
+name: Despliegue Secuencial a AWS S3
 
 on:
   workflow_dispatch:
@@ -6,48 +6,82 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+  
+    env:
+      BUILD_DIR: . 
+      S3_BUCKET_NAME: s3.tkdsierranevada.com
+      AWS_REGION: us-east-1
 
     steps:
-      - name: Checkout repository
+      - name: 📥 1. Checkout del Repositorio
         uses: actions/checkout@v4
-
-      - name: Usar Node.js
+        
+      - name: ⚙️ 2. Configuración de Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "latest"
-
-      - name: Instalar dependencias
+          node-version: "20.x" 
+          
+      - name: 📦 3. Instalar Dependencias del Proyecto
         run: npm install
-
-      - name: Verificar que el proyecto contiene JavaScript
+        
+      # --- VERIFICACIÓN DE ARQUITECTURA ---
+      
+      - name: 🔎 4. Verificar Archivos JavaScript (JS)
+        id: check_js
         run: |
-          if ! grep -rq "\.js" .; then
-            echo "No se encontraron archivos JavaScript. Cancelando..."
-            exit 1
+          if find . -name "*.js" -print -quit 2>/dev/null; then
+            echo "::set-output name=result::success"
+            echo "✅ Se encontraron archivos JavaScript."
           else
-            echo "Se encontraron archivos JavaScript."
+            echo "::set-output name=result::failure"
+            echo "🛑 No se encontraron archivos JavaScript. Deteniendo el Job."
+            # Forzamos el fallo del step si no se encuentra JS
+            exit 1 
           fi
+          
+      # --- GENERACIÓN Y PRUEBAS ---
 
-      - name: Ejecutar pruebas unitarias
-        run: |
-          npm test || (echo "Las pruebas fallaron." && exit 1)
-          echo "Pruebas unitarias completadas correctamente."
-
-      - name: Generar documentación con JSDoc
+      - name: 📝 5. Generar Documentación (JSDoc)
+        if: success()
         run: |
           echo "Generando documentación con JSDoc..."
           mkdir -p docs
-          npx jsdoc -c jsdoc.json || true
+          # El '|| true' evita que el paso falle si JSDoc encuentra advertencias menores.
+          npx jsdoc -c jsdoc.json || true 
           echo "Documentación generada en /docs"
+          
+      - name: 🧪 6. Ejecutar Pruebas Unitarias
+        if: success()
+        run: |
+          # Si npm test falla (código de salida > 0), el step fallará automáticamente
+          npm test
+          echo "✅ Pruebas unitarias completadas correctamente."
 
-      - name: Configurar credenciales de AWS
+      # --- DESPLIEGUE EN AWS ---
+
+      - name: 🔑 7. Configurar Credenciales de AWS
+        if: success()
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region: us-east-1
-
-      - name: Desplegar en S3
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }} 
+          aws-region: ${{ env.AWS_REGION }} 
+          
+      - name: 🚀 8. Desplegar Archivos en S3
+        if: success()
         run: |
-          aws s3 sync . s3://s3.tkdsierranevada.com --delete --exclude ".git/*" --exclude ".github/*"
+          echo "Sincronizando archivos con el bucket ${{ env.S3_BUCKET_NAME }} en ${{ env.AWS_REGION }}..."
+          
+          aws s3 sync ${{ env.BUILD_DIR }} s3://${{ env.S3_BUCKET_NAME }} \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude "node_modules/*" \
+            --exclude "package.json" \
+            --exclude "package-lock.json" \
+            --exclude "jsdoc.json" \
+            --exclude "README.md" \
+            --exclude "*.test.js"
+            
+          echo "✅ Despliegue en S3 completado con éxito."
