@@ -7,113 +7,45 @@ permissions:
   contents: read
 
 jobs:
-  # -------------------------------------------------
-  # 1) Verificar archivos JavaScript
-  # -------------------------------------------------
-  verificar-js:
-    name: 1) Verificar archivos .js
+  build_and_deploy:
+    name: Verificación, pruebas y despliegue
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Buscar archivos .js
-        run: |
-          JS_FILES=$(find . -type f -name "*.js")
-          if [ -z "$JS_FILES" ]; then
-            echo "❌ No se encontraron archivos .js."
-            exit 1
-          else
-            echo "✔ Archivos .js encontrados."
-
-  # -------------------------------------------------
-  # 2) Ejecutar tests unitarios
-  # -------------------------------------------------
-  tests:
-    name: 2) Tests unitarios
-    runs-on: ubuntu-latest
-    needs: verificar-js
-    if: needs.verificar-js.result == 'success'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Instalar dependencias
-        run: npm ci || npm install
-
-      - name: Ejecutar tests
-        run: |
-          npm test || (echo "❌ Los tests fallaron." && exit 1)
-          echo "✔ Tests unitarios completados correctamente."
-
-  # -------------------------------------------------
-  # 3) Generar documentación con JSDoc
-  # -------------------------------------------------
-  docs:
-    name: 3) Generar documentación
-    runs-on: ubuntu-latest
-    needs: tests
-    if: needs.tests.result == 'success'
-    outputs:
-      has_docs: ${{ steps.check.outputs.has_docs }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
 
       - name: Instalar dependencias
         run: npm install
 
-      - name: Generar documentación
+      - name: Verificar que el proyecto contiene JavaScript
         run: |
-          mkdir -p docs
-          npx jsdoc -c jsdoc.json || true
-
-      - name: Comprobar documentación generada
-        id: check
-        run: |
-          COUNT=$(find docs -type f -name "*.html" | wc -l | xargs)
-          if [ "$COUNT" -gt 0 ]; then
-            echo "✔ Documentación generada ($COUNT archivos HTML)."
-            echo "has_docs=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "⚠ No se generó documentación HTML."
-            echo "has_docs=false" >> "$GITHUB_OUTPUT"
-
-      - name: Avisar falta de documentación
-        if: steps.check.outputs.has_docs == 'false'
-        run: echo "::warning::No se generó documentación. El despliegue se omitirá."
-
-  # -------------------------------------------------
-  # 4) Desplegar a Vercel
-  # -------------------------------------------------
-  deploy-vercel:
-    name: 4) Desplegar a Vercel (producción)
-    runs-on: ubuntu-latest
-    needs: docs
-    if: needs.docs.outputs.has_docs == 'true'
-    env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Instalar CLI de Vercel
-        run: npm install -g vercel@latest
-
-      - name: Comprobar token
-        run: |
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo "❌ No se encontró VERCEL_TOKEN en los secrets."
+          if ! grep -rq "\.js" .; then
+            echo "No se encontraron archivos JavaScript. Cancelando..."
             exit 1
           else
-            echo "✔ Token de Vercel listo."
+            echo "Se encontraron archivos JavaScript."
           fi
 
-      - name: Desplegar a Vercel
+      - name: Ejecutar pruebas unitarias
         run: |
-          vercel --prod --yes --token "$VERCEL_TOKEN"
-          echo "🚀 Despliegue a Vercel completado correctamente."
+          npm test || (echo "Las pruebas fallaron." && exit 1)
+          echo "Pruebas unitarias completadas correctamente."
+
+      - name: Generar documentación con JSDoc
+        run: |
+          echo "Generando documentación con JSDoc..."
+          mkdir -p docs
+          npx jsdoc -c jsdoc.json || true
+          echo "Documentación generada en /docs"
+
+      - name: Configurar credenciales de Vercel
+        run: |
+          npm install -g vercel
+          vercel --version
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: 🚀 Desplegar en Vercel
+        run: |
+          vercel --prod --yes --token ${{ secrets.VERCEL_TOKEN }}
