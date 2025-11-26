@@ -1,4 +1,4 @@
-name: Despliegue de una página web estática
+name: DespliegueGitPage
 on:
   push:
     branches: ["main"]
