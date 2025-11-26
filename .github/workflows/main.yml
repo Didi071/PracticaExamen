@@ -50,4 +50,4 @@ jobs:
 
       - name: Desplegar en S3
         run: |
-          aws s3 sync . s3://miweb-ia-demo --delete --exclude ".git/*" --exclude ".github/*"
+          aws s3 sync . s3://s3.tkdsierranevada.com --delete --exclude ".git/*" --exclude ".github/*"
